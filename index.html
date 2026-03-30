@@ -106,10 +106,12 @@
                     </button>
 
                     <div class="grid grid-cols-2 gap-3">
-                        <button id="switchCameraBtn" class="bg-slate-800/50 text-white font-bold py-5 rounded-xl border border-white/5 flex items-center justify-center gap-2 text-xs">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                            FLIP CAM
-                        </button>
+                  <button id="switchCameraBtn" class="bg-slate-800/50 hover:bg-slate-700 text-white font-bold py-5 rounded-xl border border-white/5 flex items-center justify-center gap-2 text-xs transition-all active:scale-95">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+    </svg>
+    <span class="uppercase tracking-widest">Flip Cam</span>
+</button>
                         <button id="pushAlertBtn" class="bg-white/5 text-zinc-400 py-5 rounded-xl font-bold border border-white/10 text-xs">
                              NOTIFY LIVE
                         </button>
@@ -276,20 +278,68 @@
             } else { location.reload(); }
         };
 
-        const switchCamera = async () => {
-            if (!isStreaming || !localTracks.videoTrack) return;
-            currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
-            const newTrack = await AgoraRTC.createCameraVideoTrack({
-                encoderConfig: "480p_1",
-                facingMode: currentFacingMode
-            });
+      // Variable to track current state
+let currentFacingMode = "user"; 
+
+const switchCamera = async () => {
+    const btn = document.getElementById('switchCameraBtn');
+    
+    // 1. Safety Checks
+    if (!localTracks.videoTrack) {
+        console.error("No video track found to flip.");
+        return;
+    }
+
+    try {
+        // 2. UI Feedback (Disable button during switch)
+        btn.disabled = true;
+        btn.classList.add('opacity-50');
+        
+        // 3. Toggle Mode
+        currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+        
+        // 4. Create New Track with new facingMode
+        const newTrack = await AgoraRTC.createCameraVideoTrack({
+            encoderConfig: "480p_1", // High performance for mobile
+            facingMode: currentFacingMode
+        });
+
+        // 5. Replace Track on Client (Better than unpublish/publish)
+        // This keeps the connection seamless for viewers
+        if (hostClient && isStreaming) {
             await hostClient.unpublish(localTracks.videoTrack);
-            localTracks.videoTrack.close();
-            localTracks.videoTrack = newTrack;
-            localTracks.videoTrack.play("local-player");
+        }
+        
+        // 6. Clean up old track
+        localTracks.videoTrack.stop();
+        localTracks.videoTrack.close();
+
+        // 7. Initialize new track
+        localTracks.videoTrack = newTrack;
+        
+        // 8. Play locally and re-publish if live
+        localTracks.videoTrack.play("local-player");
+        
+        if (hostClient && isStreaming) {
             await hostClient.publish(localTracks.videoTrack);
-            showToast(`Switched to ${currentFacingMode === "user" ? "front" : "back"} camera`);
-        };
+        }
+
+        showToast(`Camera: ${currentFacingMode === "user" ? "Front" : "Back"}`);
+
+    } catch (error) {
+        console.error("Camera Switch Failed:", error);
+        showToast("Error switching camera");
+        // Revert mode on failure
+        currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+    } finally {
+        // 9. Re-enable UI
+        btn.disabled = false;
+        btn.classList.remove('opacity-50');
+    }
+};
+
+// 10. Event Listener Binding
+document.getElementById('switchCameraBtn').addEventListener('click', switchCamera);
 
         const sendPushAlert = () => {
             set(ref(db, 'globalAlert/latest'), {
